@@ -22,3 +22,14 @@ Run the script
 ```
 python tensorboard_demo.py 
 ```
+
+## Screenshots ##
+Visualizing training and validation loss over number of epochs
+![Training and validation loss](images/loss.png)
+
+Logging average loss per epoch and accuracy
+![Average Loss in an epoch](images/loss_text.png)
+![Accuracy](images/accuracy.png)
+
+Visualizing incorrect predictions
+![Incorrect predictions](images/incorrect_predictions.png)
