@@ -71,6 +71,79 @@ class Net(nn.Module):
 
         return x
 
+def train(net,
+          optimizer,
+          loss_fn,
+          trainloader,
+          validloader,
+          writer,
+          num_epochs=10):
+    for i in range(num_epochs):
+        net.train()
+        train_loss = 0.0
+        num_batches = 0
+        for j, (inputs, labels) in enumerate(trainloader):
+
+            inputs, labels = inputs.cuda(), labels.cuda()
+
+            optimizer.zero_grad()
+
+            preds = net(inputs)
+            loss = loss_fn(preds, labels)
+            loss.backward()
+
+            optimizer.step()
+
+            train_loss += loss.data.item()
+            num_batches += 1
+
+        writer.add_scalar('loss/train', train_loss / num_batches, i + 1)
+
+        print("Epoch {}: avg training loss = {}\n".format(i + 1, train_loss / num_batches))
+        writer.add_text("Loss", "Epoch {}: avg training loss = {}\n".format(i + 1, train_loss / num_batches), i + 1)
+
+        valid_loss = 0.0
+        num_batches = 0
+        net.eval()
+        for inputs, labels in validloader:
+            inputs, labels = inputs.cuda(), labels.cuda()
+
+            preds = net(inputs)
+            loss = loss_fn(preds, labels)
+
+            valid_loss += loss.data.item()
+            num_batches += 1
+
+        writer.add_scalar('loss/validation', train_loss / num_batches, i + 1)
+
+def test(net, testloader, writer):
+    net.eval()
+    ground_truth = []
+    predictions = []
+
+    incorrect_predictions = {}
+    for inputs, labels in testloader:
+
+        inputs, labels = inputs.cuda(), labels.cuda()
+
+        _, preds = F.softmax(net(inputs), dim=1).max(1)
+
+        ground_truth.extend(labels.cpu().numpy())
+        predictions.extend(preds.cpu().numpy())
+
+        for i in range(len(labels)):
+            if preds[i] != labels[i]:
+                if preds[i].item() not in incorrect_predictions.keys():
+                    incorrect_predictions[preds[i].item()] = []
+
+                incorrect_predictions[preds[i].item()].append(inputs[i].cpu().numpy())
+
+
+    accuracy = 100 * accuracy_score(ground_truth, predictions)
+    writer.add_text('accuracy', "Accuracy: {0:.2f}".format(accuracy))
+
+    return accuracy, incorrect_predictions
+
 datadir = './data'
 if os.path.exists(datadir) == False:
     os.mkdir(datadir)
@@ -92,7 +165,7 @@ training_set_size = int(0.8 * len(training_dataset))
 validation_set_size = len(training_dataset) - training_set_size
 
 training_dataset, valid_dataset = data.random_split(
-        training_dataset, 
+        training_dataset,
         [training_set_size, validation_set_size])
 
 trainloader = data.DataLoader(
@@ -123,72 +196,15 @@ net = Net(size, input_depth)
 net.cuda()
 optimizer = optim.SGD(net.parameters(), lr=0.01, momentum=0.9)
 loss_fn = nn.CrossEntropyLoss()
+num_epochs = 10
 
 writer = SummaryWriter('runs/exp_{}'.format(net.conv_depth))
 
-num_epochs = 10
-for i in range(num_epochs):
-    net.train()
-    train_loss = 0.0
-    num_batches = 0
-    for j, (inputs, labels) in enumerate(trainloader):
+train(net, optimizer, loss_fn, trainloader, validloader, writer, num_epochs)
 
-        inputs, labels = inputs.cuda(), labels.cuda()
+accuracy, incorrect_predictions = test(net, testloader, writer)
 
-        optimizer.zero_grad()
-
-        preds = net(inputs)
-        loss = loss_fn(preds, labels)
-        loss.backward()
-
-        optimizer.step()
-
-        train_loss += loss.data.item()
-        num_batches += 1
-
-    writer.add_scalar('loss/train', train_loss / num_batches, i + 1)
-
-    print("Epoch {}: avg training loss = {}\n".format(i + 1, train_loss / num_batches))
-    writer.add_text("Loss", "Epoch {}: avg training loss = {}\n".format(i + 1, train_loss / num_batches), i + 1)
-
-    valid_loss = 0.0
-    num_batches = 0
-    net.eval()
-    for inputs, labels in validloader:
-        inputs, labels = inputs.cuda(), labels.cuda()
-
-        preds = net(inputs)
-        loss = loss_fn(preds, labels)
-
-        valid_loss += loss.data.item()
-        num_batches += 1
-
-    writer.add_scalar('loss/validation', train_loss / num_batches, i + 1)
-        
-net.eval()
-ground_truth = []
-predictions = []
-
-incorrect_predictions = {}
-for inputs, labels in testloader:
-
-    inputs, labels = inputs.cuda(), labels.cuda()
-    
-    _, preds = F.softmax(net(inputs), dim=1).max(1)
-
-    ground_truth.extend(labels.cpu().numpy())
-    predictions.extend(preds.cpu().numpy())
-
-    for i in range(len(labels)):
-        if preds[i] != labels[i]:
-            if preds[i].item() not in incorrect_predictions.keys():
-                incorrect_predictions[preds[i].item()] = []
-
-            incorrect_predictions[preds[i].item()].append(inputs[i].cpu().numpy())
-
-print("Accuracy: {0:.2f}".format(100 * accuracy_score(ground_truth, predictions)))
-writer.add_text('accuracy', "Accuracy: {0:.2f}".format(100 * accuracy_score(ground_truth, predictions)))
-
+print("Accuracy: {0:.2f}".format(accuracy))
 for i in incorrect_predictions.keys():
     img_tensor = torch.from_numpy(np.array(incorrect_predictions[i]))
     img_grid = tvutils.make_grid(img_tensor)
